@@ -71,8 +71,8 @@ static uint setup_pwm(uint pwm_pin);
 static uint16_t read_joystick_axis(uint16_t *vrx, uint16_t *vry);
 static void setup();
 static uint16_t adjust_value(uint16_t value);
-static void draw_square(uint x0, uint y0);
-static void clear_square(uint x0, uint y0);
+static void draw_square(uint x0, uint y0, bool set);
+static void draw_border(bool set);
 static int map(uint raw_coord_x, uint raw_coord_y);
 
 // Varaiveis globais
@@ -102,30 +102,19 @@ int main() {
         pwm_set_gpio_level(LED_B_PIN, vry_value);
 
         // Limpar o quadrado anterior
-        clear_square(prev_x, prev_y);
+        draw_square(prev_x, prev_y, false);
         
         // Desenhar o quadrado no buffer
-        draw_square(x,y);        
+        draw_square(x,y, true);        
 
         if(display_border_alternate) {
             if(!display_border_on) {
                 printf("Desenhando borda\n");
-                ssd1306_draw_line(ssd, 0, 0, BORDER_WIDTH, 0, true);
-                ssd1306_draw_line(ssd, 0, 0, 0, BORDER_HEIGHT, true);
-                ssd1306_draw_line(ssd, BORDER_WIDTH, 0, BORDER_WIDTH, BORDER_HEIGHT, true);
-                ssd1306_draw_line(ssd, 0, BORDER_HEIGHT, BORDER_WIDTH, BORDER_HEIGHT, true);
-                height_with_square--;
-                width_with_square--;
+                draw_border(true);
                 printf("Borda desenhada\n");
-
             } else {
                 printf("Limpando borda\n");
-                ssd1306_draw_line(ssd, 0, 0, BORDER_WIDTH, 0, false);
-                ssd1306_draw_line(ssd, 0, 0, 0, BORDER_HEIGHT, false);
-                ssd1306_draw_line(ssd, BORDER_WIDTH, 0, BORDER_WIDTH, BORDER_HEIGHT, false);
-                ssd1306_draw_line(ssd, 0, BORDER_HEIGHT, BORDER_WIDTH, BORDER_HEIGHT, false);
-                height_with_square++;
-                width_with_square++;
+                draw_border(false);
                 printf("Borda limpa\n");
             }
             display_border_on = !display_border_on;
@@ -140,7 +129,7 @@ int main() {
     }
 }
 
-static void setup() {
+void setup() {
     stdio_init_all();
 
     // Botoes
@@ -247,21 +236,28 @@ static uint16_t adjust_value(uint16_t value) {
     }
 }
 
-static void draw_square(uint x0, uint y0) {
-    ssd1306_draw_line(ssd, x0, y0, x0 + 8, y0, true);
-    ssd1306_draw_line(ssd, x0, y0, x0, y0 + 8, true);
-    ssd1306_draw_line(ssd, x0, y0 + 8, x0 + 8, y0 + 8, true);
-    ssd1306_draw_line(ssd, x0 + 8, y0, x0 + 8, y0 + 8, true);
+static void draw_square(uint x0, uint y0, bool set) {
+    ssd1306_draw_line(ssd, x0, y0, x0 + 8, y0, set);
+    ssd1306_draw_line(ssd, x0, y0, x0, y0 + 8, set);
+    ssd1306_draw_line(ssd, x0, y0 + 8, x0 + 8, y0 + 8, set);
+    ssd1306_draw_line(ssd, x0 + 8, y0, x0 + 8, y0 + 8, set);
 }
 
-static void clear_square(uint x0, uint y0) {
-    ssd1306_draw_line(ssd, x0, y0, x0 + 8, y0, false);
-    ssd1306_draw_line(ssd, x0, y0, x0, y0 + 8, false);
-    ssd1306_draw_line(ssd, x0, y0 + 8, x0 + 8, y0 + 8, false);
-    ssd1306_draw_line(ssd, x0 + 8, y0, x0 + 8, y0 + 8, false);
+static void draw_border(bool set) {
+    ssd1306_draw_line(ssd, 0, 0, BORDER_WIDTH, 0, set);
+    ssd1306_draw_line(ssd, 0, 0, 0, BORDER_HEIGHT, set);
+    ssd1306_draw_line(ssd, BORDER_WIDTH, 0, BORDER_WIDTH, BORDER_HEIGHT, set);
+    ssd1306_draw_line(ssd, 0, BORDER_HEIGHT, BORDER_WIDTH, BORDER_HEIGHT, set);
 }
 
 static int map(uint raw_coord_x, uint raw_coord_y) {
-    x = (raw_coord_x * width_with_square)/4084;
-    y = height_with_square - (raw_coord_y * height_with_square)/4084; // Invertendo o eixo Y
+    uint min_x = display_border_on ? 1 : 0; // Garante que o quadrado não toque a borda esquerda
+    uint min_y = display_border_on ? 1 : 0; // Garante que o quadrado não toque a borda superior
+
+    x = (raw_coord_x * width_with_square) / 4084;
+    y = height_with_square - (raw_coord_y * height_with_square) / 4084; // Invertendo o eixo Y
+
+    // Garantir que x e y não ultrapassem os limites
+    if (x < min_x) x = min_x;
+    if (y < min_y) y = min_y;
 }
