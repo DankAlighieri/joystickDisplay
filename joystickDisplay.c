@@ -61,6 +61,11 @@ static volatile bool led_b_state = false;
 static volatile bool display_border_alternate = false;
 static bool display_border_on = false;
 
+/* 
+    Medidas para manter o quadrado dentro do display
+    display width - 8 - 1(Para nao tocar a borda nem sair 1 pixel) = 119
+    display height - 8 - 1(Para nao tocar a borda nem sair 1 pixel) = 55
+*/
 static uint height_with_square = 55;
 static uint width_with_square = 119;
 
@@ -87,15 +92,17 @@ int main() {
     int prev_y = 0;
 
     while (true) {
-
+        
+        // Lendo os valores convertidos do joystick
         read_joystick_axis(&vrx_value, &vry_value);
 
+        // Mapeando os valores do joystick para o display
         map(vrx_value, vry_value);
 
+        // Ajustando os valores para o PWM
         vrx_value = adjust_value(vrx_value);
         vry_value = adjust_value(vry_value);
 
-        printf("Valor x: %d\nValor y: %d\n", x, y);
         // Atualizando intensidade do LED Vermelho
         pwm_set_gpio_level(LED_R_PIN, vrx_value);
         // Atualizando intensidade do LED Azul
@@ -107,17 +114,10 @@ int main() {
         // Desenhar o quadrado no buffer
         draw_square(x,y, true);        
 
+        // Checa se o botao do joystick foi pressionado
         if(display_border_alternate) {
-            if(!display_border_on) {
-                printf("Desenhando borda\n");
-                draw_border(true);
-                printf("Borda desenhada\n");
-            } else {
-                printf("Limpando borda\n");
-                draw_border(false);
-                printf("Borda limpa\n");
-            }
-            display_border_on = !display_border_on;
+            // Desenha a borda
+            draw_border(display_border_on);
             display_border_alternate = !display_border_alternate;
         }  
         prev_x = x;
@@ -201,7 +201,8 @@ static void gpio_irq_handler(uint gpio, uint32_t events) {
             led_g_state = !led_g_state;
             gpio_put(LED_G_PIN, led_g_state);
             
-            display_border_alternate = true;
+            display_border_alternate = !display_border_alternate;
+            display_border_on = !display_border_on;
         }
     }
 }
@@ -253,11 +254,15 @@ static void draw_border(bool set) {
 static int map(uint raw_coord_x, uint raw_coord_y) {
     uint min_x = display_border_on ? 1 : 0; // Garante que o quadrado não toque a borda esquerda
     uint min_y = display_border_on ? 1 : 0; // Garante que o quadrado não toque a borda superior
+    uint max_x = display_border_on ? width_with_square - 1 : width_with_square;
+    uint max_y = display_border_on ? height_with_square - 1 : height_with_square;
 
-    x = (raw_coord_x * width_with_square) / 4084;
-    y = height_with_square - (raw_coord_y * height_with_square) / 4084; // Invertendo o eixo Y
+    x = (raw_coord_x * max_x) / 4084;
+    y = max_y - (raw_coord_y * max_y) / 4084; // Invertendo o eixo Y
 
     // Garantir que x e y não ultrapassem os limites
     if (x < min_x) x = min_x;
     if (y < min_y) y = min_y;
+    if (x > max_x) x = max_x;
+    if (y > max_y) x = max_y;
 }
