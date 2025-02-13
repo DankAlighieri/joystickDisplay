@@ -53,13 +53,15 @@ struct render_area frame_area = {
 static uint32_t last_time = 0;
 
 // Variaveis de estado dos leds
-static volatile bool led_r_state = false;
+static volatile bool led_r_state = true;
 static volatile bool led_g_state = false;
-static volatile bool led_b_state = false;
+static volatile bool led_b_state = true;
 
 // Flag para alternar o estado da borda do display
 static volatile bool display_border_alternate = false;
-static bool display_border_on = false;
+static volatile bool display_border_on = false;
+typedef enum {FIRST_BORDER, SECOND_BORDER, THIRD_BORDER, NO_BORDER} border_type;
+static border_type current_border = FIRST_BORDER;
 
 /* 
     Medidas para manter o quadrado dentro do display
@@ -78,7 +80,10 @@ static void setup();
 static uint16_t adjust_value(uint16_t value);
 static void draw_square(uint x0, uint y0, bool set);
 static void draw_border(bool set);
+static void draw_dashed_border(bool set);
+static void draw_double_line_border(bool set);
 static int map(uint raw_coord_x, uint raw_coord_y);
+
 
 // Varaiveis globais
 uint slice_r, slice_b;
@@ -90,6 +95,7 @@ int main() {
 
     int prev_x = 0;
     int prev_y = 0;
+    bool first = true;
 
     while (true) {
         
@@ -116,16 +122,35 @@ int main() {
 
         // Checa se o botao do joystick foi pressionado
         if(display_border_alternate) {
-            // Desenha a borda
-            draw_border(display_border_on);
+            switch (current_border) {
+            case FIRST_BORDER:
+                printf("%s primeira borda\n", display_border_on ? "Desenhando" : "Apagando");
+                draw_border(display_border_on);
+                break;
+            case SECOND_BORDER:
+                printf("Desenhando segunda borda\n");
+                draw_dashed_border(display_border_on);
+                break;
+            case THIRD_BORDER:
+                printf("%s terceira borda\n", display_border_on ? "Desenhando" : "Apagando");
+                draw_double_line_border(display_border_on);
+                break;
+            case NO_BORDER:
+                printf("Sem borda\n");
+                draw_double_line_border(false);
+            default:
+                break;
+            }
+            current_border = (current_border + 1) % 4; // Alternando entre as bordas
             display_border_alternate = !display_border_alternate;
-        }  
+        }
+        // Salvando as coordenadas anteriores do quadrado, para apaga-las na proxima iteracao
         prev_x = x;
         prev_y = y;
     
         // Renderizar o buffer no display
         render_on_display(ssd, &frame_area);
-        sleep_ms(100);
+        sleep_ms(10);
     }
 }
 
@@ -191,7 +216,10 @@ static void gpio_irq_handler(uint gpio, uint32_t events) {
 
             pwm_set_enabled(slice_r, led_r_state);
             pwm_set_enabled(slice_b, led_b_state);
+            gpio_put(LED_R_PIN, led_r_state);
+            gpio_put(LED_B_PIN, led_b_state);
         } else {
+            // Alternando o estado do LED verde e a borda do display
             printf(
                     "Botao joy pressionado\n"
                     "Alternando estado do LED verde\n"
@@ -207,6 +235,7 @@ static void gpio_irq_handler(uint gpio, uint32_t events) {
     }
 }
 
+// Funcao para debounce
 static bool debounce(uint32_t *last_time) {
     uint32_t current_time = to_us_since_boot(get_absolute_time());
 
@@ -217,6 +246,7 @@ static bool debounce(uint32_t *last_time) {
     return false;
 }
 
+// Funcao para ler as entradas analogicas do joystick
 static uint16_t read_joystick_axis(uint16_t *vrx, uint16_t *vry) {
     adc_select_input(ADC_CHANNEL_0);
     sleep_us(2);
@@ -227,6 +257,7 @@ static uint16_t read_joystick_axis(uint16_t *vrx, uint16_t *vry) {
     *vrx = adc_read();
 }
 
+// Funcao para configurar a dead zone do joystick e controlar a intensidade dos LEDs atraves de PWM
 static uint16_t adjust_value(uint16_t value) {
     if (value > CENTER_VALUE + DEAD_ZONE) {
         return value - (CENTER_VALUE + DEAD_ZONE);
@@ -244,6 +275,7 @@ static void draw_square(uint x0, uint y0, bool set) {
     ssd1306_draw_line(ssd, x0 + 8, y0, x0 + 8, y0 + 8, set);
 }
 
+// Borda 1
 static void draw_border(bool set) {
     ssd1306_draw_line(ssd, 0, 0, BORDER_WIDTH, 0, set);
     ssd1306_draw_line(ssd, 0, 0, 0, BORDER_HEIGHT, set);
@@ -251,12 +283,51 @@ static void draw_border(bool set) {
     ssd1306_draw_line(ssd, 0, BORDER_HEIGHT, BORDER_WIDTH, BORDER_HEIGHT, set);
 }
 
-static int map(uint raw_coord_x, uint raw_coord_y) {
-    uint min_x = display_border_on ? 1 : 0; // Garante que o quadrado não toque a borda esquerda
-    uint min_y = display_border_on ? 1 : 0; // Garante que o quadrado não toque a borda superior
-    uint max_x = display_border_on ? width_with_square - 1 : width_with_square;
-    uint max_y = display_border_on ? height_with_square - 1 : height_with_square;
+// Borda 2
+static void draw_dashed_border(bool set) {
+    for (int i = 0; i < BORDER_WIDTH; i += 4) {
+        ssd1306_set_pixel(ssd, i, 0, set);
+        ssd1306_set_pixel(ssd, i, BORDER_HEIGHT, set);
+    }
+    for (int i = 0; i < BORDER_HEIGHT; i += 4) {
+        ssd1306_set_pixel(ssd, 0, i, set);
+        ssd1306_set_pixel(ssd, BORDER_WIDTH, i, set);
+    }
+}
 
+// Borda 3
+static void draw_double_line_border(bool set) {
+    // Outer border
+    ssd1306_draw_line(ssd, 0, 0, BORDER_WIDTH, 0, set);
+    ssd1306_draw_line(ssd, 0, 0, 0, BORDER_HEIGHT, set);
+    ssd1306_draw_line(ssd, BORDER_WIDTH, 0, BORDER_WIDTH, BORDER_HEIGHT, set);
+    ssd1306_draw_line(ssd, 0, BORDER_HEIGHT, BORDER_WIDTH, BORDER_HEIGHT, set);
+
+    // Inner border
+    ssd1306_draw_line(ssd, 3, 3, BORDER_WIDTH - 3, 3, set);
+    ssd1306_draw_line(ssd, 3, 3, 3, BORDER_HEIGHT - 3, set);
+    ssd1306_draw_line(ssd, BORDER_WIDTH - 3, 3, BORDER_WIDTH - 3, BORDER_HEIGHT - 3, set);
+    ssd1306_draw_line(ssd, 3, BORDER_HEIGHT - 3, BORDER_WIDTH - 3, BORDER_HEIGHT - 3, set);
+}
+
+static int map(uint raw_coord_x, uint raw_coord_y) {
+    uint min_x, min_y;
+    uint max_x, max_y; 
+
+    // Garante que o quadrado nao toque nas bordas
+    if (display_border_on || FIRST_BORDER + 1) {
+        min_x = 1;
+        min_y = 1;
+        max_x = width_with_square - 1;
+        max_y = height_with_square - 1;
+    }
+    if (current_border == THIRD_BORDER + 1) {
+        min_x = 4;
+        min_y = 4;
+        max_x = width_with_square - 4;
+        max_y = height_with_square - 4;
+    }
+    
     x = (raw_coord_x * max_x) / 4084;
     y = max_y - (raw_coord_y * max_y) / 4084; // Invertendo o eixo Y
 
