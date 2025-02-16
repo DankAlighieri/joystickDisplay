@@ -129,6 +129,7 @@ int main() {
                 break;
             case SECOND_BORDER:
                 printf("Desenhando segunda borda\n");
+                gpio_put(LED_G_PIN, true);
                 draw_dashed_border(display_border_on);
                 break;
             case THIRD_BORDER:
